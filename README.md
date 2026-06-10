@@ -22,10 +22,11 @@ The menu bar shows a shield with the number of active Cursor agents (e.g. `🛡 
 
 | Action | Effect |
 |--------|--------|
-| **Lock & Guard** | Starts `caffeinate -is`, then locks the screen |
+| **Start Guarding** | Starts `caffeinate -is` so the system stays awake |
+| **Lock Screen** | Locks the screen (shown only while guarding) |
 | **Stop Guarding** | Kills caffeinate (shown only while guarding) |
 
-Guarding stops **automatically** when you unlock the screen — the plugin checks lock state on each 30s refresh and cleans up the keep-awake process.
+Starting the guard does **not** lock the screen — lock whenever you're ready (via **Lock Screen** or Ctrl+Cmd+Q). Guarding stops **automatically** after you lock and later unlock; until then it keeps running across unlocks so you can step away repeatedly.
 
 The dropdown also lists recent Cursor agent sessions (project, status, current action), detected by scanning `~/.cursor/projects/*/agent-transcripts/`.
 

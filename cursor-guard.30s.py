@@ -2,9 +2,9 @@
 """cursor-guard-bar — SwiftBar plugin: lock your Mac while Cursor agents keep working.
 
 Menu bar shows a shield plus the number of active Cursor agent sessions.
-"Lock & Guard" starts a caffeinate keep-awake process and locks the screen via
-the native macOS lock screen. Guarding stops automatically once the screen is
-unlocked (checked on each refresh).
+"Start Guarding" launches a caffeinate keep-awake process so agents keep
+running; lock the screen whenever you like ("Lock Screen" or Ctrl+Cmd+Q).
+Guarding stops automatically after a lock -> unlock cycle is observed.
 
 <swiftbar.title>cursor-guard-bar</swiftbar.title>
 <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
@@ -25,7 +25,7 @@ VERSION = "1.0.0"
 REPO_URL = "https://github.com/reinaldo-simoes-wp/cursor-guard-bar"
 
 CONFIG_DIR = os.path.expanduser("~/.config/cursor-guard-bar")
-PID_FILE = os.path.join(CONFIG_DIR, "caffeinate.pid")
+STATE_FILE = os.path.join(CONFIG_DIR, "guard.json")
 
 PROJECTS_DIR = os.path.expanduser("~/.cursor/projects")
 HOOKS_STATUS_FILE = os.path.expanduser("~/.cursor-guard/agent-status.json")
@@ -35,10 +35,6 @@ COMPLETED_EXPIRY_SEC = 120
 RECENT_THRESHOLD_SEC = 600
 TAIL_BUFFER_SIZE = 32768
 HEAD_BUFFER_SIZE = 16384
-
-# Don't auto-stop the guard right after locking — the lock state can take a
-# moment to register and SwiftBar refreshes immediately after the action.
-UNLOCK_GRACE_SEC = 60
 
 GREEN = "#34C759"
 YELLOW = "#FFCC00"
@@ -50,18 +46,24 @@ RED = "#FF3B30"
 
 
 def read_guard():
-    """Return (pid, started_at) for a live caffeinate guard, else (None, None)."""
+    """Return guard state dict for a live caffeinate guard, else None."""
     try:
-        with open(PID_FILE) as f:
-            parts = f.read().split()
-        pid, started = int(parts[0]), float(parts[1])
-    except (OSError, ValueError, IndexError):
-        return None, None
+        with open(STATE_FILE) as f:
+            state = json.load(f)
+        pid = int(state["pid"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
     if not pid_is_caffeinate(pid):
-        clear_pidfile()
-        return None, None
-    return pid, started
+        clear_state()
+        return None
+    return state
+
+
+def write_state(state):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
 
 
 def pid_is_caffeinate(pid):
@@ -77,16 +79,15 @@ def pid_is_caffeinate(pid):
     return out.endswith("caffeinate")
 
 
-def clear_pidfile():
+def clear_state():
     try:
-        os.remove(PID_FILE)
+        os.remove(STATE_FILE)
     except OSError:
         pass
 
 
 def start_guard():
-    pid, _ = read_guard()
-    if pid:
+    if read_guard():
         return
     # -i: prevent idle sleep, -s: prevent system sleep while on AC power.
     # Display sleep stays allowed so the locked screen can go dark.
@@ -97,19 +98,17 @@ def start_guard():
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(PID_FILE, "w") as f:
-        f.write(f"{proc.pid} {time.time()}")
+    write_state({"pid": proc.pid, "started": time.time(), "locked_seen": False})
 
 
 def stop_guard():
-    pid, _ = read_guard()
-    if pid:
+    state = read_guard()
+    if state:
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(int(state["pid"]), signal.SIGTERM)
         except OSError:
             pass
-    clear_pidfile()
+    clear_state()
 
 
 # --- screen lock (login.framework / CoreGraphics via ctypes) --------------
@@ -163,15 +162,27 @@ def screen_is_locked():
         return False
 
 
-def auto_unguard():
-    """Stop guarding if the screen has been unlocked (past the grace period)."""
-    pid, started = read_guard()
-    if not pid:
-        return
-    if time.time() - started < UNLOCK_GRACE_SEC:
-        return
-    if not screen_is_locked():
+def sync_guard_state():
+    """Track lock/unlock while guarding.
+
+    Guarding starts without locking, so the guard only auto-stops after a
+    full lock -> unlock cycle has been observed: once the screen is seen
+    locked we set locked_seen; on a later unlocked check the guard stops.
+    Returns the current guard state (or None).
+    """
+    state = read_guard()
+    if not state:
+        return None
+
+    if screen_is_locked():
+        if not state.get("locked_seen"):
+            state["locked_seen"] = True
+            write_state(state)
+    elif state.get("locked_seen"):
         stop_guard()
+        return None
+
+    return state
 
 
 # --- agent scanner ---------------------------------------------------------
@@ -456,10 +467,8 @@ def humanize_action(name):
 
 
 def render_menu():
-    auto_unguard()
-
-    guard_pid, guard_started = read_guard()
-    guarding = guard_pid is not None
+    state = sync_guard_state()
+    guarding = state is not None
     agents = scan_agents()
     active_count = sum(1 for a in agents if a["status"] == "active")
 
@@ -478,15 +487,19 @@ def render_menu():
     print("---")
 
     if guarding:
-        since = time.strftime("%H:%M", time.localtime(guard_started))
-        print(f"Guarding since {since} | sfimage=lock.fill color={GREEN}")
+        since = time.strftime("%H:%M", time.localtime(state.get("started", 0)))
+        print(f"Guarding since {since} | sfimage=checkmark.shield color={GREEN}")
+        print(
+            f"Lock Screen | bash={plugin_path} param1=lock"
+            " terminal=false sfimage=lock.fill"
+        )
         print(
             f"Stop Guarding | bash={plugin_path} param1=unguard"
             " terminal=false refresh=true sfimage=shield.slash"
         )
     else:
         print(
-            f"Lock & Guard | bash={plugin_path} param1=lock"
+            f"Start Guarding | bash={plugin_path} param1=guard"
             " terminal=false refresh=true sfimage=lock.shield"
         )
 
@@ -514,8 +527,15 @@ def render_menu():
 def main():
     if len(sys.argv) > 1:
         cmd = sys.argv[1]
-        if cmd == "lock":
+        if cmd == "guard":
             start_guard()
+        elif cmd == "lock":
+            # Mark the lock immediately so the next unlock stops the guard
+            # even if no refresh happens while the screen is locked.
+            state = read_guard()
+            if state and not state.get("locked_seen"):
+                state["locked_seen"] = True
+                write_state(state)
             lock_screen()
         elif cmd == "unguard":
             stop_guard()
