@@ -40,6 +40,11 @@ HOOKS_STATUS_FILE = os.path.expanduser("~/.cursor-guard/agent-status.json")
 ACTIVE_THRESHOLD_SEC = 45
 COMPLETED_EXPIRY_SEC = 120
 RECENT_THRESHOLD_SEC = 600
+# A transcript ending in a pending tool_use means a tool is (probably) still
+# running — long shell commands and background subagents write nothing to the
+# parent transcript for minutes, so allow a much longer silence before
+# declaring the session completed.
+PENDING_TOOL_STALE_SEC = 300
 TAIL_BUFFER_SIZE = 32768
 HEAD_BUFFER_SIZE = 16384
 
@@ -320,6 +325,27 @@ def scan_agents():
             try:
                 mtime = os.stat(jsonl_path).st_mtime
             except OSError:
+                # Brand-new session: directory exists but the .jsonl hasn't
+                # been written yet — surface it as active if the dir is fresh.
+                if agent_dir:
+                    try:
+                        fallback_mtime = max(
+                            os.stat(agent_dir).st_mtime,
+                            newest_subagent_mtime(agent_dir),
+                        )
+                        dir_age = max(0, now - fallback_mtime)
+                        if dir_age <= ACTIVE_THRESHOLD_SEC:
+                            agents.append(
+                                {
+                                    "project": clean_project_name(proj),
+                                    "query": "Agent session",
+                                    "status": "active",
+                                    "current_action": None,
+                                    "age_sec": round(dir_age),
+                                }
+                            )
+                    except OSError:
+                        pass
                 continue
 
             sub_mtime = newest_subagent_mtime(agent_dir) if agent_dir else 0
@@ -336,7 +362,15 @@ def scan_agents():
             turn_info = last_turn_info(last_lines)
 
             subagents_active = sub_mtime > 0 and (now - sub_mtime) <= ACTIVE_THRESHOLD_SEC
-            is_stale = age_sec > ACTIVE_THRESHOLD_SEC
+            pending_tool = (
+                turn_info is not None
+                and turn_info["last_role"] == "assistant"
+                and turn_info["has_pending_tool"]
+            )
+            stale_limit = (
+                PENDING_TOOL_STALE_SEC if pending_tool else ACTIVE_THRESHOLD_SEC
+            )
+            is_stale = age_sec > stale_limit
             assistant_finished = (
                 turn_info is not None
                 and turn_info["last_role"] == "assistant"
