@@ -4,7 +4,7 @@
 Menu bar shows a shield plus the number of active Cursor agent sessions.
 "Start Guarding" launches a caffeinate keep-awake process so agents keep
 running; lock the screen whenever you like ("Lock Screen" or Ctrl+Cmd+Q).
-Guarding stops automatically after a lock -> unlock cycle is observed.
+Guarding is a manual toggle: it stays on until you click "Stop Guarding".
 
 <xbar.title>cursor-guard-bar</xbar.title>
 <xbar.version>v1.0.0</xbar.version>
@@ -105,7 +105,7 @@ def start_guard():
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    write_state({"pid": proc.pid, "started": time.time(), "locked_seen": False})
+    write_state({"pid": proc.pid, "started": time.time()})
 
 
 def stop_guard():
@@ -124,72 +124,6 @@ def stop_guard():
 def lock_screen():
     login = ctypes.CDLL("/System/Library/PrivateFrameworks/login.framework/login")
     login.SACLockScreenImmediate()
-
-
-def screen_is_locked():
-    try:
-        cf = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        cg = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-
-        cg.CGSessionCopyCurrentDictionary.restype = ctypes.c_void_p
-        session = cg.CGSessionCopyCurrentDictionary()
-        if not session:
-            return False
-
-        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
-        cf.CFStringCreateWithCString.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_char_p,
-            ctypes.c_uint32,
-        ]
-        kCFStringEncodingUTF8 = 0x08000100
-        key = cf.CFStringCreateWithCString(
-            None, b"CGSSessionScreenIsLocked", kCFStringEncodingUTF8
-        )
-
-        cf.CFDictionaryGetValue.restype = ctypes.c_void_p
-        cf.CFDictionaryGetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        value = cf.CFDictionaryGetValue(session, key)
-
-        locked = False
-        if value:
-            cf.CFBooleanGetValue.restype = ctypes.c_bool
-            cf.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
-            locked = bool(cf.CFBooleanGetValue(value))
-
-        cf.CFRelease.argtypes = [ctypes.c_void_p]
-        cf.CFRelease(key)
-        cf.CFRelease(session)
-        return locked
-    except Exception:
-        return False
-
-
-def sync_guard_state():
-    """Track lock/unlock while guarding.
-
-    Guarding starts without locking, so the guard only auto-stops after a
-    full lock -> unlock cycle has been observed: once the screen is seen
-    locked we set locked_seen; on a later unlocked check the guard stops.
-    Returns the current guard state (or None).
-    """
-    state = read_guard()
-    if not state:
-        return None
-
-    if screen_is_locked():
-        if not state.get("locked_seen"):
-            state["locked_seen"] = True
-            write_state(state)
-    elif state.get("locked_seen"):
-        stop_guard()
-        return None
-
-    return state
 
 
 # --- agent scanner ---------------------------------------------------------
@@ -474,7 +408,7 @@ def humanize_action(name):
 
 
 def render_menu():
-    state = sync_guard_state()
+    state = read_guard()
     guarding = state is not None
     agents = scan_agents()
     active_count = sum(1 for a in agents if a["status"] == "active")
@@ -537,12 +471,6 @@ def main():
         if cmd == "guard":
             start_guard()
         elif cmd == "lock":
-            # Mark the lock immediately so the next unlock stops the guard
-            # even if no refresh happens while the screen is locked.
-            state = read_guard()
-            if state and not state.get("locked_seen"):
-                state["locked_seen"] = True
-                write_state(state)
             lock_screen()
         elif cmd == "unguard":
             stop_guard()

@@ -26,7 +26,7 @@ The menu bar shows a shield with the number of active Cursor agents (e.g. `🛡 
 | **Lock Screen** | Locks the screen (shown only while guarding) |
 | **Stop Guarding** | Kills caffeinate (shown only while guarding) |
 
-Starting the guard does **not** lock the screen — lock whenever you're ready (via **Lock Screen** or Ctrl+Cmd+Q). Guarding stops **automatically** after you lock and later unlock; until then it keeps running across unlocks so you can step away repeatedly.
+Starting the guard does **not** lock the screen — lock whenever you're ready (via **Lock Screen** or Ctrl+Cmd+Q). Guarding is a manual toggle: it keeps the system awake across lock/unlock cycles until you click **Stop Guarding**.
 
 The dropdown also lists recent Cursor agent sessions (project, status, current action), detected by scanning `~/.cursor/projects/*/agent-transcripts/`.
 
