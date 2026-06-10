@@ -6,7 +6,14 @@ Menu bar shows a shield plus the number of active Cursor agent sessions.
 running; lock the screen whenever you like ("Lock Screen" or Ctrl+Cmd+Q).
 Guarding stops automatically after a lock -> unlock cycle is observed.
 
-<swiftbar.title>cursor-guard-bar</swiftbar.title>
+<xbar.title>cursor-guard-bar</xbar.title>
+<xbar.version>v1.0.0</xbar.version>
+<xbar.author>Reinaldo Simoes</xbar.author>
+<xbar.author.github>reinaldo-simoes-wp</xbar.author.github>
+<xbar.desc>Lock your Mac privately and securely while Cursor agents keep working locally. Native lock screen + caffeinate keep-awake, with live agent session status.</xbar.desc>
+<xbar.dependencies>python3</xbar.dependencies>
+<xbar.abouturl>https://github.com/reinaldo-simoes-wp/cursor-guard-bar</xbar.abouturl>
+
 <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 <swiftbar.hideSwiftBar>true</swiftbar.hideSwiftBar>
 """
