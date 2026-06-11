@@ -134,7 +134,7 @@ def render_menu():
     print("---")
 
     if guarding:
-        since = time.strftime("%H:%M", time.localtime(state.get("started", 0)))
+        since = time.strftime("%b %d, %H:%M UTC", time.gmtime(state.get("started", 0)))
         print(f"Guarding since {since} | sfimage=checkmark.shield color={GREEN}")
         print(
             f"Lock Screen | bash={plugin_path} param1=lock"
