@@ -18,7 +18,7 @@ ln -s "$(pwd)/cursor-guard-bar/cursor-guard.30s.py" ~/.swiftbar/
 
 ## Usage
 
-The menu bar shows a shield with the number of active Cursor agents (e.g. `🛡 2`). The shield is highlighted while guarding.
+The menu bar shows a shield, highlighted green while guarding.
 
 | Action | Effect |
 |--------|--------|
@@ -27,8 +27,6 @@ The menu bar shows a shield with the number of active Cursor agents (e.g. `🛡 
 | **Stop Guarding** | Kills caffeinate (shown only while guarding) |
 
 Starting the guard does **not** lock the screen — lock whenever you're ready (via **Lock Screen** or Ctrl+Cmd+Q). Guarding is a manual toggle: it keeps the system awake across lock/unlock cycles until you click **Stop Guarding**.
-
-The dropdown also lists recent Cursor agent sessions (project, status, current action), detected by scanning `~/.cursor/projects/*/agent-transcripts/`.
 
 ## Known limitation
 
